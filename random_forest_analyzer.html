@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Random Forest Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--ink:#1d2b22;--moss:#2f5d3a;--leaf:#6a994e;--bark:#8a5a2b;--paper:#f6f5ef;--card:#fff;--line:#d9d8cc;--muted:#5d6b61}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'Sarabun','Noto Sans Thai',system-ui,sans-serif;line-height:1.6}
+header{background:var(--moss);color:#fff;padding:22px 20px}
+header .in,main{max-width:1180px;margin:0 auto}
+header .in{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:1.6rem}
+header p{margin:2px 0 0;opacity:.85;font-size:.95rem}
+main{padding:20px}
+section.box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:18px;margin-bottom:16px}
+h2{margin:0 0 10px;font-size:1.15rem;color:var(--moss)}
+button,select,input[type=number]{font:inherit}
+button{cursor:pointer;border:1px solid var(--moss);background:#fff;color:var(--moss);padding:7px 14px;border-radius:6px}
+button:hover{background:#eaf1e6}
+button.pri{background:var(--moss);color:#fff}button.pri:hover{background:#244a2d}
+button.on{background:var(--moss);color:#fff}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--leaf);outline-offset:2px}
+.lang button{border-color:#fff;background:transparent;color:#fff}.lang button.on{background:#fff;color:var(--moss)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0}
+label{font-size:.92rem;color:var(--muted)}
+input[type=file]{max-width:100%}
+select,input[type=number]{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+input[type=number]{width:80px}
+#info{color:var(--muted);font-size:.93rem}
+.tbl{overflow-x:auto;margin:6px 0 4px}
+table{border-collapse:collapse;width:100%;font-size:.92rem}
+th,td{border:1px solid var(--line);padding:6px 10px;text-align:right;white-space:nowrap}
+th{background:#e8efe3;text-align:center}td:first-child{text-align:left}
+tbody tr:nth-child(even){background:#fafaf5}
+.note{background:#f3f1e6;border-left:4px solid var(--bark);padding:8px 12px;font-size:.9rem;color:#44403a;margin:6px 0 20px;white-space:pre-line}
+h3{margin:18px 0 4px;font-size:1.02rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:14px}
+@media(max-width:520px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fff}
+.card h3{margin:0 0 6px;font-size:.98rem}
+.card .bt{display:flex;gap:6px;margin-bottom:6px}.card .bt button{padding:3px 10px;font-size:.84rem}
+.hide{display:none}
+.err{color:#a4262c;font-weight:600}
+</style>
+</head>
+<body>
+<header><div class="in">
+ <div><h1 data-i="title"></h1><p data-i="sub"></p></div>
+ <div class="lang"><button id="bTH" class="on" onclick="setLang('th')">ไทย</button> <button id="bEN" onclick="setLang('en')">English</button></div>
+</div></header>
+<main>
+<section class="box">
+ <h2 data-i="s1"></h2>
+ <div class="row"><input type="file" id="file" accept=".xlsx,.xls,.csv"></div>
+ <div class="row">
+  <button onclick="useSample()" data-i="tryS"></button>
+  <button onclick="dlSample()" data-i="dlS"></button>
+ </div>
+ <div id="info"></div>
+ <div class="row hide" id="tgtRow"><label data-i="target"></label><select id="target"></select></div>
+</section>
+<section class="box">
+ <h2 data-i="s2"></h2>
+ <div class="row">
+  <label data-i="trees"></label><input type="number" id="nT" value="100" min="10" max="500">
+  <label data-i="depth"></label><input type="number" id="nD" value="8" min="1" max="30">
+  <button class="pri" id="run" onclick="run()" data-i="run"></button>
+ </div>
+ <div id="msg"></div>
+</section>
+<section class="box hide" id="res">
+ <div class="row">
+  <button id="vT" class="on" onclick="view('t')" data-i="vTable"></button>
+  <button id="vC" onclick="view('c')" data-i="vChart"></button>
+  <button onclick="dlXlsx()" data-i="dlX" id="bX"></button>
+ </div>
+ <div id="tables"></div>
+ <div id="charts" class="grid hide"></div>
+</section>
+</main>
+<script>
+const T={
+th:{title:'วิเคราะห์สถิติ Random Forest',sub:'อัปโหลดไฟล์ Excel หรือทดลองด้วยข้อมูลเศรษฐกิจการเมืองตัวอย่าง',
+s1:'1. ข้อมูล',tryS:'ทดลองข้อมูลตัวอย่าง',dlS:'ดาวน์โหลดข้อมูลตัวอย่าง (Excel)',target:'ตัวแปรตาม (Target):',
+s2:'2. ตั้งค่าและประมวลผล',trees:'จำนวนต้นไม้:',depth:'ความลึกสูงสุด:',run:'ประมวลผลข้อมูล',
+vTable:'แสดงตารางค่าสถิติ',vChart:'แสดงผลเป็นกราฟ',dlX:'ดาวน์โหลดตาราง (Excel)',
+noData:'กรุณาแนบไฟล์ Excel หรือกดทดลองข้อมูลตัวอย่างก่อน',loaded:(r,c)=>`โหลดข้อมูลแล้ว ${r} แถว ${c} คอลัมน์`,
+busy:'กำลังประมวลผล...',tooFew:'ข้อมูลน้อยเกินไป (ต้องมีอย่างน้อย 20 แถวที่ใช้ได้ และมีตัวแปรอิสระอย่างน้อย 1 ตัว)',
+showN:'แสดงตัวเลข',hideN:'ซ่อนตัวเลข',dlG:'ดาวน์โหลดกราฟ (PNG)',
+cls:'การจำแนกประเภท (Classification)',reg:'การถดทอย (Regression)',
+item:'รายการ',value:'ค่า',
+t_sum:'ตารางที่ 1 สรุปโมเดล Random Forest',type:'ประเภทการวิเคราะห์',nUsed:'จำนวนข้อมูลที่ใช้',nTr:'ชุดฝึก (Train 80%)',nTe:'ชุดทดสอบ (Test 20%)',nF:'จำนวนตัวแปรอิสระ',nT:'จำนวนต้นไม้',dp:'ความลึกสูงสุด',mt:'ตัวแปรที่สุ่มต่อการแบ่ง (mtry)',
+n_sum:'Random Forest สร้างต้นไม้ตัดสินใจหลายต้นจากข้อมูลที่สุ่มแบบ Bootstrap แล้วรวมผลลัพธ์ (โหวตเสียงข้างมากหรือเฉลี่ย)\nmtry คือจำนวนตัวแปรที่สุ่มพิจารณาในแต่ละจุดแบ่ง ช่วยให้ต้นไม้ต่างกันและลด Overfitting',
+t_perf:'ตารางที่ 2 ค่าสถิติประสิทธิภาพของโมเดล',metric:'ตัวชี้วัด',
+n_perfc:'Accuracy = สัดส่วนที่ทำนายถูกทั้งหมด\nPrecision = ในกลุ่มที่โมเดลทำนายว่าเป็นคลาสนั้น มีกี่ % ที่ถูกจริง\nRecall = ในกลุ่มที่เป็นคลาสนั้นจริง โมเดลจับได้กี่ %\nF1 = ค่าเฉลี่ยฮาร์โมนิกของ Precision และ Recall (Macro = เฉลี่ยทุกคลาสเท่ากัน, Weighted = ถ่วงน้ำหนักตามจำนวนตัวอย่าง)\nOOB Accuracy = ความแม่นยำจากข้อมูลที่ไม่ถูกสุ่มเข้าไปฝึกต้นไม้แต่ละต้น (Out-of-Bag) เป็นการตรวจสอบภายในโดยไม่ต้องแบ่งข้อมูลเพิ่ม',
+n_perfr:'R² = สัดส่วนความแปรปรวนของตัวแปรตามที่โมเดลอธิบายได้ (ยิ่งใกล้ 1 ยิ่งดี)\nRMSE = รากที่สองของค่าคลาดเคลื่อนกำลังสองเฉลี่ย มีหน่วยเดียวกับตัวแปรตาม\nMAE = ค่าคลาดเคลื่อนสัมบูรณ์เฉลี่ย\nMSE = ค่าคลาดเคลื่อนกำลังสองเฉลี่ย\nOOB R² / OOB MSE = ค่าที่คำนวณจากข้อมูล Out-of-Bag',
+t_cm:'ตารางที่ 3 ค่าสถิติรายคลาส',cl:'คลาส',sup:'จำนวนจริง (Support)',
+n_cm:'Support คือจำนวนตัวอย่างจริงของคลาสนั้นในชุดทดสอบ ค่าที่ต่ำของ Recall แสดงว่าโมเดลมองข้ามคลาสนั้น ส่วน Precision ต่ำแสดงว่าทำนายคลาสนั้นเกินจริง',
+t_conf:'ตารางที่ 4 เมทริกซ์ความสับสน (Confusion Matrix: แถว = ค่าจริง, คอลัมน์ = ค่าทำนาย)',actual:'ค่าจริง \\ ทำนาย',
+n_conf:'ตัวเลขในแนวทแยงคือจำนวนที่ทำนายถูก ส่วนนอกแนวทแยงคือจำนวนที่ทำนายผิดไปยังคลาสอื่น',
+t_imp:'ตารางที่ 5 ความสำคัญของตัวแปร (Feature Importance)',rk:'อันดับ',feat:'ตัวแปร',mdi:'MDI (ลดความไม่บริสุทธิ์)',pct:'ร้อยละ (%)',perm:'Permutation (ค่าคลาดเคลื่อนที่เพิ่มขึ้น)',rkP:'อันดับ (Permutation)',
+n_imp:'MDI (Mean Decrease in Impurity) = ผลรวมการลด Gini (หรือ MSE) ที่ตัวแปรสร้างได้ทุกต้น แล้วปรับให้รวมเป็น 1 อาจเอนเอียงไปทางตัวแปรที่มีค่าต่างกันมาก\nPermutation = ค่าคลาดเคลื่อนของ OOB ที่เพิ่มขึ้นเมื่อสลับค่าตัวแปรนั้นแบบสุ่ม ยิ่งสูงแสดงว่าโมเดลพึ่งพาตัวแปรนั้นมาก (ค่าติดลบหรือใกล้ 0 = ไม่มีผล)',
+t_desc:'ตารางที่ 6 สถิติเชิงพรรณนาของตัวแปรอิสระ',mean:'ค่าเฉลี่ย',sd:'ส.ก.',min:'ต่ำสุด',med:'มัธยฐาน',max:'สูงสุด',
+n_desc:'ส.ก. = ส่วนเบี่ยงเบนมาตรฐาน แสดงการกระจายของข้อมูล ตัวแปรที่ไม่ใช่ตัวเลขถูกแปลงเป็นรหัสตัวเลขก่อนวิเคราะห์',
+g_mdi:'ความสำคัญของตัวแปร (MDI)',g_perm:'ความสำคัญของตัวแปร (Permutation)',g_oob:'ค่าคลาดเคลื่อน OOB ตามจำนวนต้นไม้',g_dist:'การกระจายของตัวแปรตาม',g_rad:'เรดาร์ความสำคัญของตัวแปร',g_sc:'แผนภาพกระจาย 2 ตัวแปรสำคัญสูงสุด',g_pr:'Precision / Recall / F1 รายคลาส',g_cf:'เมทริกซ์ความสับสน (กราฟแท่ง)',g_cum:'ความสำคัญสะสม (Pareto)',g_av:'ค่าจริง vs ค่าทำนาย (ชุดทดสอบ)',g_res:'ฮิสโทแกรมของส่วนเหลือ (Residual)',
+trs:'จำนวนต้นไม้',err:'ค่าคลาดเคลื่อน',cnt:'ความถี่',act:'ค่าจริง',prd:'ค่าทำนาย',pc:'Precision',rc:'Recall',f1:'F1',
+oobAcc:'OOB Accuracy',oobR2:'OOB R²',oobMse:'OOB MSE'},
+en:{title:'Random Forest Statistical Analyzer',sub:'Upload an Excel file or try the sample political-economy dataset',
+s1:'1. Data',tryS:'Try sample data',dlS:'Download sample data (Excel)',target:'Target variable:',
+s2:'2. Settings & processing',trees:'Number of trees:',depth:'Max depth:',run:'Process data',
+vTable:'Show statistics tables',vChart:'Show charts',dlX:'Download tables (Excel)',
+noData:'Please attach an Excel file or click "Try sample data" first.',loaded:(r,c)=>`Loaded ${r} rows, ${c} columns`,
+busy:'Processing...',tooFew:'Not enough data (need at least 20 usable rows and 1 numeric predictor).',
+showN:'Show numbers',hideN:'Hide numbers',dlG:'Download chart (PNG)',
+cls:'Classification',reg:'Regression',
+item:'Item',value:'Value',
+t_sum:'Table 1. Random Forest model summary',type:'Analysis type',nUsed:'Rows used',nTr:'Training set (80%)',nTe:'Test set (20%)',nF:'Number of predictors',nT:'Number of trees',dp:'Max depth',mt:'Features tried per split (mtry)',
+n_sum:'A Random Forest grows many decision trees on bootstrap samples and combines them (majority vote or averaging).\nmtry is the number of features randomly considered at each split; it decorrelates the trees and reduces overfitting.',
+t_perf:'Table 2. Model performance statistics',metric:'Metric',
+n_perfc:'Accuracy = share of all predictions that are correct.\nPrecision = of the cases predicted as a class, the % that truly belong to it.\nRecall = of the cases truly in a class, the % the model finds.\nF1 = harmonic mean of Precision and Recall (Macro = unweighted class average, Weighted = weighted by class size).\nOOB Accuracy = accuracy on the Out-of-Bag samples each tree did not train on: a built-in validation that needs no extra split.',
+n_perfr:'R² = share of target variance explained by the model (closer to 1 is better).\nRMSE = root mean squared error, in the target\'s units.\nMAE = mean absolute error.\nMSE = mean squared error.\nOOB R² / OOB MSE = the same measures computed on Out-of-Bag samples.',
+t_cm:'Table 3. Per-class statistics',cl:'Class',sup:'Support',
+n_cm:'Support is the number of true cases of the class in the test set. Low Recall means the class is being missed; low Precision means it is over-predicted.',
+t_conf:'Table 4. Confusion matrix (rows = actual, columns = predicted)',actual:'Actual \\ Predicted',
+n_conf:'Diagonal cells are correct predictions; off-diagonal cells are cases misclassified into another class.',
+t_imp:'Table 5. Feature importance',rk:'Rank',feat:'Feature',mdi:'MDI (impurity decrease)',pct:'Percent (%)',perm:'Permutation (error increase)',rkP:'Rank (Permutation)',
+n_imp:'MDI (Mean Decrease in Impurity) = total Gini (or MSE) reduction a feature produces across all trees, scaled to sum to 1. It can favour features with many distinct values.\nPermutation = increase in OOB error when the feature\'s values are randomly shuffled. Higher means the model relies on it more (zero or negative = no effect).',
+t_desc:'Table 6. Descriptive statistics of predictors',mean:'Mean',sd:'SD',min:'Min',med:'Median',max:'Max',
+n_desc:'SD = standard deviation, the spread of the data. Non-numeric predictors are converted to numeric codes before analysis.',
+g_mdi:'Feature importance (MDI)',g_perm:'Feature importance (Permutation)',g_oob:'OOB error by number of trees',g_dist:'Target distribution',g_rad:'Feature importance radar',g_sc:'Scatter of the top 2 features',g_pr:'Per-class Precision / Recall / F1',g_cf:'Confusion matrix (bar chart)',g_cum:'Cumulative importance (Pareto)',g_av:'Actual vs predicted (test set)',g_res:'Residual histogram',
+trs:'Number of trees',err:'Error',cnt:'Frequency',act:'Actual',prd:'Predicted',pc:'Precision',rc:'Recall',f1:'F1',
+oobAcc:'OOB Accuracy',oobR2:'OOB R²',oobMse:'OOB MSE'}};
+T.th.reg='การถดถอย (Regression)';
+let L='th',DATA=null,R=null,charts=[],mode='t';
+const t=k=>T[L][k]??k;
+const $=id=>document.getElementById(id);
+const fmt=v=>typeof v!=='number'?v:Number.isInteger(v)?String(v):v.toFixed(4);
+function setLang(l){L=l;document.documentElement.lang=l;$('bTH').className=l==='th'?'on':'';$('bEN').className=l==='en'?'on':'';
+ document.querySelectorAll('[data-i]').forEach(e=>e.textContent=t(e.dataset.i));
+ if(DATA)$('info').textContent=t('loaded')(DATA.rows.length,DATA.cols.length);
+ if(R){renderTables();if(mode==='c')renderCharts();}}
+
+/* ---------- Data ---------- */
+function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let x=Math.imul(s^s>>>15,1|s);x=x+Math.imul(x^x>>>7,61|x)^x;return((x^x>>>14)>>>0)/4294967296}}
+function genSample(){const r=rng(2026),g=()=>{let u=0;for(let i=0;i<6;i++)u+=r();return(u-3)/0.7071},rows=[];
+ for(let i=0;i<200;i++){
+  const dem=Math.min(10,Math.max(1,5.5+1.8*g())),cor=Math.min(100,Math.max(10,50+17*g())),
+   gdp=2.5+2.2*g()+0.15*(dem-5.5),inf=Math.max(0,4+3*g()-0.2*(dem-5.5)),une=Math.max(1,7+3*g()),
+   fdi=Math.max(0,3+2*g()+0.02*(cor-50)),debt=Math.max(10,55+25*g()),trade=Math.max(20,85+35*g()),gini=Math.min(60,Math.max(22,38+6*g()));
+  const sc=0.5*(dem-5.5)/1.8+0.45*(cor-50)/17+0.25*gdp/2.2-0.3*inf/3-0.25*une/3-0.1*debt/25-0.2*(gini-38)/6+0.9*g();
+  rows.push({Country_ID:'C'+String(i+1).padStart(3,'0'),GDP_Growth_Pct:+gdp.toFixed(2),Inflation_Pct:+inf.toFixed(2),Unemployment_Pct:+une.toFixed(2),FDI_Inflow_GDP_Pct:+fdi.toFixed(2),Gov_Debt_GDP_Pct:+debt.toFixed(1),Trade_Openness_Pct:+trade.toFixed(1),Gini_Index:+gini.toFixed(1),Corruption_Control_Index:+cor.toFixed(1),Democracy_Index:+dem.toFixed(2),_sc:sc});}
+ const s=rows.map(x=>x._sc).sort((a,b)=>a-b),q1=s[67],q2=s[133];
+ rows.forEach(x=>{x.Political_Stability=x._sc<q1?'Low':x._sc<q2?'Medium':'High';delete x._sc;});return rows;}
+function setData(rows){if(!rows.length){return}DATA={rows,cols:Object.keys(rows[0])};
+ $('info').textContent=t('loaded')(rows.length,DATA.cols.length);
+ $('tgtRow').classList.remove('hide');$('target').innerHTML=DATA.cols.map(c=>`<option>${c}</option>`).join('');
+ $('target').value=DATA.cols[DATA.cols.length-1];$('msg').textContent='';}
+function useSample(){setData(genSample());}
+function dlSample(){const ws=XLSX.utils.json_to_sheet(genSample()),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Sample');XLSX.writeFile(wb,'sample_political_economy.xlsx');}
+$('file').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();
+ rd.onload=ev=>{const wb=XLSX.read(ev.target.result,{type:'array'});setData(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null}));};rd.readAsArrayBuffer(f);});
+
+/* ---------- Random Forest ---------- */
+function build(X,y,idx,d,o){
+ const n=idx.length,K=o.K,cls=o.cls;let cnt,sum=0,sq=0;
+ if(cls){cnt=new Array(K).fill(0);idx.forEach(i=>cnt[y[i]]++);}else idx.forEach(i=>{sum+=y[i];sq+=y[i]*y[i];});
+ const tot=cls?n-cnt.reduce((a,c)=>a+c*c,0)/n:sq-sum*sum/n;
+ const leaf=()=>({v:cls?cnt.map(c=>c/n):sum/n});
+ if(d>=o.depth||n<2*o.minLeaf||tot<1e-9)return leaf();
+ const fs=[...Array(o.p).keys()];for(let i=fs.length-1;i>0;i--){const j=Math.floor(o.r()*(i+1));[fs[i],fs[j]]=[fs[j],fs[i]];}
+ let best=null,bs=Infinity;
+ for(const f of fs.slice(0,o.mtry)){
+  const s=idx.slice().sort((a,b)=>X[a][f]-X[b][f]);
+  let cL,cR,sqL=0,sqR=0,sL=0,qL=0;
+  if(cls){cL=new Array(K).fill(0);cR=cnt.slice();sqR=cnt.reduce((a,c)=>a+c*c,0);}
+  for(let k=0;k<n-1;k++){const i=s[k],c=y[i];
+   if(cls){sqL+=2*cL[c]+1;cL[c]++;sqR-=2*cR[c]-1;cR[c]--;}else{sL+=y[i];qL+=y[i]*y[i];}
+   const a=X[i][f],b=X[s[k+1]][f];if(a===b)continue;const nL=k+1,nR=n-nL;if(nL<o.minLeaf||nR<o.minLeaf)continue;
+   const sc=cls?(nL-sqL/nL)+(nR-sqR/nR):(qL-sL*sL/nL)+((sq-qL)-(sum-sL)**2/nR);
+   if(sc<bs){bs=sc;best={f,t:(a+b)/2};}}}
+ if(!best)return leaf();
+ o.mdi[best.f]+=tot-bs;
+ const l=[],rr=[];idx.forEach(i=>(X[i][best.f]<=best.t?l:rr).push(i));
+ return{f:best.f,t:best.t,l:build(X,y,l,d+1,o),r:build(X,y,rr,d+1,o)};}
+function walk(nd,x){while(nd.f!==undefined)nd=x[nd.f]<=nd.t?nd.l:nd.r;return nd.v;}
+const argmax=a=>a.indexOf(Math.max(...a));
+function train(X,y,o){
+ const n=X.length,r=rng(7);o.r=r;o.mdi=new Array(o.p).fill(0);const trees=[],curve=[],perm=new Array(o.p).fill(0);
+ const acc=[...Array(n)].map(()=>o.cls?new Array(o.K).fill(0):[0]),vc=new Array(n).fill(0);
+ const pred=(tr,x)=>walk(tr,x);
+ const err=(tr,oob,get)=>{let e=0;oob.forEach(i=>{const p=pred(tr,get(i));e+=o.cls?(argmax(p)!==y[i]?1:0):(p-y[i])**2;});return e/oob.length;};
+ for(let b=0;b<o.T;b++){
+  const bag=new Uint8Array(n),idx=[];for(let i=0;i<n;i++){const j=Math.floor(r()*n);idx.push(j);bag[j]=1;}
+  const tr=build(X,y,idx,0,o);trees.push(tr);const oob=[];for(let i=0;i<n;i++)if(!bag[i])oob.push(i);
+  oob.forEach(i=>{const p=pred(tr,X[i]);vc[i]++;if(o.cls)p.forEach((v,k)=>acc[i][k]+=v);else acc[i][0]+=p;});
+  let e=0,m=0;for(let i=0;i<n;i++)if(vc[i]){m++;e+=o.cls?(argmax(acc[i])!==y[i]?1:0):(acc[i][0]/vc[i]-y[i])**2;}curve.push(m?e/m:NaN);
+  if(oob.length){const base=err(tr,oob,i=>X[i]);
+   for(let f=0;f<o.p;f++){const v=oob.map(i=>X[i][f]);for(let i=v.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[v[i],v[j]]=[v[j],v[i]];}
+    const pos=new Map(oob.map((i,k)=>[i,k]));
+    perm[f]+=(err(tr,oob,i=>{const c=X[i].slice();c[f]=v[pos.get(i)];return c;})-base)/o.T;}}}
+ return{trees,curve,perm,mdi:o.mdi};}
+function predict(F,x,o){if(o.cls){const s=new Array(o.K).fill(0);F.trees.forEach(tr=>walk(tr,x).forEach((v,k)=>s[k]+=v));return argmax(s);}
+ return F.trees.reduce((a,tr)=>a+walk(tr,x),0)/F.trees.length;}
+
+/* ---------- Pipeline ---------- */
+function run(){
+ if(!DATA){$('msg').innerHTML=`<span class="err">${t('noData')}</span>`;return;}
+ $('msg').textContent=t('busy');$('res').classList.add('hide');
+ setTimeout(()=>{try{R=analyze();$('msg').textContent='';$('res').classList.remove('hide');view('t');}
+  catch(e){$('msg').innerHTML=`<span class="err">${e.message==='few'?t('tooFew'):e.message}</span>`;}},30);}
+function analyze(){
+ const tg=$('target').value,rows=DATA.rows.filter(r=>r[tg]!==null&&r[tg]!==''&&r[tg]!==undefined);
+ const med=a=>{const s=a.filter(v=>v!==null).sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:0;};
+ const feats=[],cols=[];
+ DATA.cols.filter(c=>c!==tg).forEach(c=>{const raw=rows.map(r=>r[c]);const isNum=raw.filter(v=>typeof v==='number').length>=0.8*raw.length;
+  if(isNum){const m=med(raw.map(v=>typeof v==='number'?v:null));cols.push(raw.map(v=>typeof v==='number'?v:m));feats.push(c);}
+  else{const u=[...new Set(raw.map(String))];if(u.length>1&&u.length<rows.length*0.5){cols.push(raw.map(v=>u.indexOf(String(v))));feats.push(c);}}});
+ if(rows.length<20||!feats.length)throw new Error('few');
+ const n=rows.length,p=feats.length,X=rows.map((_,i)=>cols.map(c=>c[i]));
+ const rawY=rows.map(r=>r[tg]),numY=rawY.every(v=>typeof v==='number'),cls=!(numY&&new Set(rawY).size>10);
+ let y,classes=[];if(cls){classes=[...new Set(rawY.map(String))].sort();y=rawY.map(v=>classes.indexOf(String(v)));}else y=rawY;
+ const o={cls,K:classes.length,p,T:Math.max(10,+$('nT').value||100),depth:Math.max(1,+$('nD').value||8),minLeaf:2,mtry:Math.max(1,cls?Math.round(Math.sqrt(p)):Math.round(p/3))};
+ const r0=rng(11),ord=[...Array(n).keys()];for(let i=n-1;i>0;i--){const j=Math.floor(r0()*(i+1));[ord[i],ord[j]]=[ord[j],ord[i]];}
+ const nte=Math.max(2,Math.round(n*0.2)),te=ord.slice(0,nte),trI=ord.slice(nte);
+ const Xtr=trI.map(i=>X[i]),ytr=trI.map(i=>y[i]);
+ const F=train(Xtr,ytr,o);
+ const yt=te.map(i=>y[i]),pr=te.map(i=>predict(F,X[i],o));
+ const R={cls,classes,feats,o,n,ntr:trI.length,nte,X,y,te,yt,pr,F,tg,Xtr};
+ const mdiT=F.mdi.reduce((a,b)=>a+b,0)||1;R.mdi=F.mdi.map(v=>v/mdiT);R.perm=F.perm;
+ const oobE=F.curve[F.curve.length-1];
+ if(cls){const K=o.K,cm=[...Array(K)].map(()=>new Array(K).fill(0));yt.forEach((a,i)=>cm[a][pr[i]]++);R.cm=cm;
+  R.pc=classes.map((_,k)=>{const tp=cm[k][k],pp=cm.reduce((a,r)=>a+r[k],0),ap=cm[k].reduce((a,b)=>a+b,0),pre=pp?tp/pp:0,rec=ap?tp/ap:0;return{pre,rec,f1:pre+rec?2*pre*rec/(pre+rec):0,sup:ap};});
+  const tp=cm.reduce((a,r,k)=>a+r[k],0);R.acc=tp/nte;const mean=k=>R.pc.reduce((a,c)=>a+c[k],0)/K;
+  R.macro={pre:mean('pre'),rec:mean('rec'),f1:mean('f1')};R.wf1=R.pc.reduce((a,c)=>a+c.f1*c.sup,0)/nte;R.oob=1-oobE;}
+ else{const my=yt.reduce((a,b)=>a+b,0)/nte,sse=yt.reduce((a,v,i)=>a+(v-pr[i])**2,0),sst=yt.reduce((a,v)=>a+(v-my)**2,0);
+  R.mse=sse/nte;R.rmse=Math.sqrt(R.mse);R.mae=yt.reduce((a,v,i)=>a+Math.abs(v-pr[i]),0)/nte;R.r2=1-sse/(sst||1);
+  const mt=ytr.reduce((a,b)=>a+b,0)/ytr.length,vt=ytr.reduce((a,v)=>a+(v-mt)**2,0)/ytr.length;R.oobMse=oobE;R.oobR2=1-oobE/(vt||1);}
+ return R;}
+
+/* ---------- Tables ---------- */
+function tables(){
+ const T1=[[t('type'),R.cls?t('cls'):t('reg')],[t('nUsed'),R.n],[t('nTr'),R.ntr],[t('nTe'),R.nte],[t('nF'),R.feats.length],[t('nT'),R.o.T],[t('dp'),R.o.depth],[t('mt'),R.o.mtry]];
+ const out=[{id:'Summary',title:t('t_sum'),head:[t('item'),t('value')],rows:T1,note:t('n_sum')}];
+ if(R.cls){out.push({id:'Performance',title:t('t_perf'),head:[t('metric'),t('value')],rows:[['Accuracy',R.acc],['Macro Precision',R.macro.pre],['Macro Recall',R.macro.rec],['Macro F1',R.macro.f1],['Weighted F1',R.wf1],[t('oobAcc'),R.oob]],note:t('n_perfc')});
+  out.push({id:'ClassStats',title:t('t_cm'),head:[t('cl'),'Precision','Recall','F1',t('sup')],rows:R.classes.map((c,k)=>[c,R.pc[k].pre,R.pc[k].rec,R.pc[k].f1,R.pc[k].sup]),note:t('n_cm')});
+  out.push({id:'Confusion',title:t('t_conf'),head:[t('actual'),...R.classes],rows:R.classes.map((c,k)=>[c,...R.cm[k]]),note:t('n_conf')});}
+ else out.push({id:'Performance',title:t('t_perf'),head:[t('metric'),t('value')],rows:[['R²',R.r2],['RMSE',R.rmse],['MAE',R.mae],['MSE',R.mse],[t('oobR2'),R.oobR2],[t('oobMse'),R.oobMse]],note:t('n_perfr')});
+ const ord=R.feats.map((_,i)=>i).sort((a,b)=>R.mdi[b]-R.mdi[a]),po=R.feats.map((_,i)=>i).sort((a,b)=>R.perm[b]-R.perm[a]);
+ out.push({id:'Importance',title:t('t_imp'),head:[t('rk'),t('feat'),t('mdi'),t('pct'),t('perm'),t('rkP')],rows:ord.map((f,k)=>[k+1,R.feats[f],R.mdi[f],+(R.mdi[f]*100).toFixed(2),R.perm[f],po.indexOf(f)+1]),note:t('n_imp')});
+ const ds=R.feats.map((f,j)=>{const v=R.X.map(r=>r[j]),m=v.reduce((a,b)=>a+b,0)/v.length,s=[...v].sort((a,b)=>a-b);
+  return[f,m,Math.sqrt(v.reduce((a,b)=>a+(b-m)**2,0)/(v.length-1||1)),s[0],s[Math.floor(s.length/2)],s[s.length-1]];});
+ out.push({id:'Descriptive',title:t('t_desc'),head:[t('feat'),t('mean'),t('sd'),t('min'),t('med'),t('max')],rows:ds,note:t('n_desc')});
+ return out;}
+function renderTables(){$('tables').innerHTML=tables().map(x=>`<h3>${x.title}</h3><div class="tbl"><table><thead><tr>${x.head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${x.rows.map(r=>`<tr>${r.map(c=>`<td>${fmt(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><div class="note">${x.note}</div>`).join('');}
+function dlXlsx(){const wb=XLSX.utils.book_new();tables().forEach(x=>{const ws=XLSX.utils.aoa_to_sheet([[x.title],x.head,...x.rows,[],[x.note]]);XLSX.utils.book_append_sheet(wb,ws,x.id);});XLSX.writeFile(wb,'RandomForest_Results.xlsx');}
+function view(m){mode=m;$('vT').className=m==='t'?'on':'';$('vC').className=m==='c'?'on':'';
+ $('tables').classList.toggle('hide',m!=='t');$('charts').classList.toggle('hide',m!=='c');$('bX').classList.toggle('hide',m!=='t');
+ if(m==='t')renderTables();else renderCharts();}
+
+/* ---------- Charts ---------- */
+const PAL=['#2f5d3a','#bc6c25','#4d908e','#9b2226','#6a994e','#577590','#e9c46a','#7b2d8e'];
+const NumPlugin={id:'nums',afterDatasetsDraw(c){if(!c.$show||c.config.type==='scatter')return;const x=c.ctx;x.save();x.font='bold 11px Sarabun,sans-serif';x.fillStyle='#111';
+ c.data.datasets.forEach((d,i)=>{const m=c.getDatasetMeta(i);if(m.hidden)return;m.data.forEach((el,j)=>{let v=d.data[j];if(v==null||isNaN(v))return;if(c.config.type==='line'&&d.data.length>25&&j%Math.ceil(d.data.length/10))return;
+  const s=fmt(+(+v).toFixed(3));let px,py;
+  if(c.config.type==='bar'){if(c.options.indexAxis==='y'){x.textAlign='left';px=el.x+4;py=el.y+4;}else{x.textAlign='center';px=el.x;py=el.y-4;}}
+  else if(c.config.type==='doughnut'){x.textAlign='center';const p=el.tooltipPosition();px=p.x;py=p.y;x.fillStyle='#fff';x.fillText(s,px,py);x.fillStyle='#111';return;}
+  else{x.textAlign='center';px=el.x;py=el.y-7;}
+  x.fillText(s,px,py);});});x.restore();}};
+const BgPlugin={id:'bg',beforeDraw(c){const x=c.ctx;x.save();x.globalCompositeOperation='destination-over';x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.restore();}};
+function mk(title,type,data,opt={}){
+ const d=document.createElement('div');d.className='card';d.innerHTML=`<h3>${title}</h3><div class="bt"><button class="n">${t('showN')}</button><button class="d">${t('dlG')}</button></div><canvas></canvas>`;
+ $('charts').appendChild(d);
+ const c=new Chart(d.querySelector('canvas'),{type,data,options:Object.assign({responsive:true,plugins:{legend:{display:data.datasets.length>1||type==='doughnut'}}},opt),plugins:[NumPlugin,BgPlugin]});
+ c.$show=false;charts.push(c);
+ d.querySelector('.n').onclick=e=>{c.$show=!c.$show;e.target.textContent=c.$show?t('hideN'):t('showN');c.update();};
+ d.querySelector('.d').onclick=()=>{const a=document.createElement('a');a.href=c.toBase64Image('image/png',1);a.download=title.replace(/\W+/g,'_')+'.png';a.click();};}
+function hist(v,bins=10){const mn=Math.min(...v),mx=Math.max(...v),w=(mx-mn)/bins||1,cn=new Array(bins).fill(0);v.forEach(a=>cn[Math.min(bins-1,Math.floor((a-mn)/w))]++);
+ return{labels:cn.map((_,i)=>(mn+i*w).toFixed(2)),cn};}
+function renderCharts(){
+ charts.forEach(c=>c.destroy());charts=[];$('charts').innerHTML='';
+ const ord=R.feats.map((_,i)=>i).sort((a,b)=>R.mdi[b]-R.mdi[a]),po=R.feats.map((_,i)=>i).sort((a,b)=>R.perm[b]-R.perm[a]);
+ const bar=(lbl,vals,color,horiz=true)=>({labels:lbl,datasets:[{label:'',data:vals,backgroundColor:color}]});
+ const hz={indexAxis:'y',layout:{padding:{right:36}}};
+ mk(t('g_mdi'),'bar',bar(ord.map(i=>R.feats[i]),ord.map(i=>R.mdi[i]),PAL[0]),hz);
+ mk(t('g_perm'),'bar',bar(po.map(i=>R.feats[i]),po.map(i=>R.perm[i]),PAL[1]),hz);
+ mk(t('g_oob'),'line',{labels:R.F.curve.map((_,i)=>i+1),datasets:[{label:t('err'),data:R.F.curve,borderColor:PAL[3],pointRadius:0,borderWidth:2,tension:.2}]},{scales:{x:{title:{display:true,text:t('trs')},ticks:{maxTicksLimit:10}},y:{title:{display:true,text:t('err')}}},layout:{padding:{top:14}}});
+ if(R.cls){const cn=R.classes.map((_,k)=>R.y.filter(v=>v===k).length);
+  mk(t('g_dist'),'doughnut',{labels:R.classes,datasets:[{data:cn,backgroundColor:PAL}]});}
+ else{const h=hist(R.y);mk(t('g_dist'),'bar',bar(h.labels,h.cn,PAL[2]),{layout:{padding:{top:14}}});}
+ mk(t('g_rad'),'radar',{labels:R.feats,datasets:[{label:'MDI',data:R.mdi,backgroundColor:'rgba(47,93,58,.25)',borderColor:PAL[0]},{label:'Permutation',data:R.perm,backgroundColor:'rgba(188,108,37,.2)',borderColor:PAL[1]}]});
+ const a=ord[0],b=ord[1]??ord[0],sc={scales:{x:{title:{display:true,text:R.feats[a]}},y:{title:{display:true,text:R.feats[b]}}}};
+ if(R.cls)mk(t('g_sc'),'scatter',{datasets:R.classes.map((c,k)=>({label:c,backgroundColor:PAL[k%8]+'bb',data:R.X.map((r,i)=>R.y[i]===k?{x:r[a],y:r[b]}:null).filter(Boolean)}))},sc);
+ else mk(t('g_sc'),'scatter',{datasets:[{label:R.tg,backgroundColor:PAL[0]+'aa',data:R.X.map(r=>({x:r[a],y:r[b]}))}]},sc);
+ let cum=0;mk(t('g_cum'),'line',{labels:ord.map(i=>R.feats[i]),datasets:[{label:'%',data:ord.map(i=>+(100*(cum+=R.mdi[i])).toFixed(1)),borderColor:PAL[5],backgroundColor:PAL[5],tension:.2}]},{layout:{padding:{top:14}}});
+ if(R.cls){mk(t('g_pr'),'bar',{labels:R.classes,datasets:[['pre','pc'],['rec','rc'],['f1','f1']].map(([k,n],i)=>({label:t(n),data:R.pc.map(c=>c[k]),backgroundColor:PAL[i]}))},{layout:{padding:{top:14}}});
+  mk(t('g_cf'),'bar',{labels:R.classes.map(c=>t('act')+': '+c),datasets:R.classes.map((c,k)=>({label:t('prd')+': '+c,data:R.cm.map(r=>r[k]),backgroundColor:PAL[k%8]}))},{layout:{padding:{top:14}}});}
+ else{mk(t('g_av'),'scatter',{datasets:[{label:t('prd'),backgroundColor:PAL[0]+'aa',data:R.yt.map((v,i)=>({x:v,y:R.pr[i]}))}]},{scales:{x:{title:{display:true,text:t('act')}},y:{title:{display:true,text:t('prd')}}}});
+  const h=hist(R.yt.map((v,i)=>v-R.pr[i]));mk(t('g_res'),'bar',bar(h.labels,h.cn,PAL[3]),{layout:{padding:{top:14}}});}
+}
+setLang('th');
+</script>
+</body>
+</html>
